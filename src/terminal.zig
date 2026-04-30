@@ -1,8 +1,45 @@
 const std = @import("std");
+const atomic = std.atomic;
 const mem = std.mem;
 const posix = std.posix;
 const testing = std.testing;
+const Sigaction = posix.Sigaction;
 const Termios = std.posix.termios;
+const Winsize = std.posix.winsize;
+
+var resize_event_flag = atomic.Value(bool).init(false);
+
+fn handleResizeEvent(_: i32) callconv(.c) void {
+    resize_event_flag.store(true, .release);
+}
+
+pub fn registerResizeEventHandler() void {
+    var sigaction: Sigaction = .{
+        .handler = .{ .handler = handleResizeEvent },
+        .mask = posix.sigemptyset(),
+        .flags = 0,
+    };
+
+    posix.sigaction(posix.SIG.WINCH, &sigaction, null);
+}
+
+fn getWindowSize() !Winsize {
+    var winsize: Winsize = .{ .row = 0, .col = 0, .xpixel = 0, .ypixel = 0 };
+
+    const return_code = posix.system.ioctl(posix.STDOUT_FILENO, posix.T.IOCGWINSZ, @intFromPtr(&winsize));
+
+    return if (return_code != 0) error.IoctlError else winsize;
+}
+
+fn getResizeEventFlag() bool {
+    if (resize_event_flag.load(.acquire)) {
+        resize_event_flag.store(false, .release);
+
+        return true;
+    }
+
+    return false;
+}
 
 pub fn enableRawMode() !Termios {
     const original_termios = try posix.tcgetattr(posix.STDIN_FILENO);
@@ -28,6 +65,18 @@ fn applyRawFlags(termios: *Termios) void {
     termios.lflag.ISIG = false;
     termios.lflag.IEXTEN = false;
     termios.oflag.OPOST = false;
+}
+
+test "getResizeEventFlag returns true once after a resize event" {
+    resize_event_flag.store(false, .release);
+
+    try testing.expectEqual(getResizeEventFlag(), false);
+
+    resize_event_flag.store(true, .release);
+
+    try testing.expectEqual(getResizeEventFlag(), true);
+    try testing.expectEqual(getResizeEventFlag(), false);
+    try testing.expectEqual(resize_event_flag.load(.acquire), false);
 }
 
 test "applyRawFlags disables all raw-mode flags" {

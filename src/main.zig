@@ -6,8 +6,8 @@ const process = std.process;
 const testing = std.testing;
 const Writer = std.io.Writer;
 
-const raw_mode = @import("raw_mode.zig");
 const scanner = @import("scanner.zig");
+const terminal = @import("terminal.zig");
 
 pub fn main() !void {
     var stderr_buffer: [1024]u8 = undefined;
@@ -53,10 +53,12 @@ pub fn main() !void {
     const root_node = try scanner.getNode(allocator, &dir_handle, dir_path);
     defer root_node.deinit(allocator);
 
-    const original_termios = try raw_mode.enableRawMode();
-    defer raw_mode.disableRawMode(original_termios) catch |err| {
+    const original_termios = try terminal.enableRawMode();
+    defer terminal.disableRawMode(original_termios) catch |err| {
         debug.print("{}", .{err});
     };
+
+    terminal.registerResizeEventHandler();
 }
 
 fn fatal(stderr: *Writer, comptime fmt: []const u8, args: anytype) void {
