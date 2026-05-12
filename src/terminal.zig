@@ -32,7 +32,7 @@ fn getWindowSize() !Winsize {
     return if (return_code != 0) error.IoctlError else winsize;
 }
 
-fn getResizeEventFlag() bool {
+pub fn getResizeEventFlag() bool {
     if (resize_event_flag.load(.acquire)) {
         resize_event_flag.store(false, .release);
 

@@ -1,5 +1,6 @@
 const std = @import("std");
 const debug = std.debug;
+const posix = std.posix;
 const testing = std.testing;
 const Init = std.process.Init;
 const Io = std.Io;
@@ -59,6 +60,28 @@ pub fn main(init: Init) !void {
     };
 
     terminal.registerResizeEventHandler();
+
+    var input_buffer: [1]u8 = undefined;
+
+    while (true) {
+        if (terminal.getResizeEventFlag()) {
+            debug.print("Resize event\r\n", .{});
+        }
+
+        const byte_count = try posix.read(posix.STDIN_FILENO, &input_buffer);
+
+        if (byte_count == 0) {
+            continue;
+        }
+
+        const byte = input_buffer[0];
+
+        debug.print("User entered: {c}\r\n", .{byte});
+
+        if (byte == 'q') {
+            break;
+        }
+    }
 }
 
 fn fatal(stderr: *Writer, comptime fmt: []const u8, args: anytype) void {
