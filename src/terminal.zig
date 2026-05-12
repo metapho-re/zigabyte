@@ -59,6 +59,8 @@ pub fn disableRawMode(original_termios: Termios) !void {
 }
 
 fn applyRawFlags(termios: *Termios) void {
+    termios.cc[@intFromEnum(posix.V.MIN)] = 0;
+    termios.cc[@intFromEnum(posix.V.TIME)] = 1;
     termios.iflag.ICRNL = false;
     termios.iflag.IXON = false;
     termios.lflag.ECHO = false;
@@ -83,6 +85,8 @@ test "getResizeEventFlag returns true once after a resize event" {
 test "applyRawFlags disables all raw-mode flags" {
     var test_termios = mem.zeroes(Termios);
 
+    test_termios.cc[@intFromEnum(posix.V.MIN)] = 42;
+    test_termios.cc[@intFromEnum(posix.V.TIME)] = 42;
     test_termios.iflag.ICRNL = true;
     test_termios.iflag.IXON = true;
     test_termios.lflag.ECHO = true;
@@ -93,6 +97,8 @@ test "applyRawFlags disables all raw-mode flags" {
 
     applyRawFlags(&test_termios);
 
+    try testing.expectEqual(0, test_termios.cc[@intFromEnum(posix.V.MIN)]);
+    try testing.expectEqual(1, test_termios.cc[@intFromEnum(posix.V.TIME)]);
     try testing.expectEqual(false, test_termios.iflag.ICRNL);
     try testing.expectEqual(false, test_termios.iflag.IXON);
     try testing.expectEqual(false, test_termios.lflag.ECHO);
