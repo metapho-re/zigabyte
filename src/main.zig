@@ -1,36 +1,36 @@
 const std = @import("std");
 const debug = std.debug;
-const fs = std.fs;
-const heap = std.heap;
-const process = std.process;
 const testing = std.testing;
-const Writer = std.io.Writer;
+const Init = std.process.Init;
+const Io = std.Io;
+const Writer = std.Io.Writer;
 
 const scanner = @import("scanner.zig");
 const terminal = @import("terminal.zig");
 
-pub fn main() !void {
+pub fn main(init: Init) !void {
     var stderr_buffer: [1024]u8 = undefined;
-    var stderr_writer = fs.File.stderr().writer(&stderr_buffer);
+    var stderr_writer = Io.File.stderr().writer(init.io, &stderr_buffer);
 
     const stderr = &stderr_writer.interface;
+    const allocator = init.gpa;
+    const args = init.minimal.args;
 
-    var gpa = heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
+    var args_iterator = args.iterate();
+    defer args_iterator.deinit();
 
-    const allocator = gpa.allocator();
+    _ = args_iterator.skip();
 
-    const args = try process.argsAlloc(allocator);
-    defer process.argsFree(allocator, args);
+    const arg = args_iterator.next();
 
-    if (args.len > 2) {
+    if (args_iterator.next() != null) {
         fatal(stderr, "Usage: zigabyte [directory]", .{});
         return;
     }
 
-    const dir_path = if (args.len > 1) args[1] else ".";
+    const dir_path = if (arg) |value| value else ".";
 
-    var dir_handle = fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| switch (err) {
+    var dir_handle = Io.Dir.cwd().openDir(init.io, dir_path, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => {
             fatal(stderr, "Directory not found: {s}", .{dir_path});
             return;
@@ -48,9 +48,9 @@ pub fn main() !void {
             return;
         },
     };
-    defer dir_handle.close();
+    defer dir_handle.close(init.io);
 
-    const root_node = try scanner.getNode(allocator, &dir_handle, dir_path);
+    const root_node = try scanner.getNode(allocator, init.io, &dir_handle, dir_path);
     defer root_node.deinit(allocator);
 
     const original_termios = try terminal.enableRawMode();

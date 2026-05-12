@@ -1,10 +1,10 @@
 const std = @import("std");
 const heap = std.heap;
-const posix = std.posix;
 const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
-const Dir = std.fs.Dir;
+const Dir = std.Io.Dir;
+const Io = std.Io;
 
 const Node = struct {
     name: []const u8,
@@ -38,7 +38,7 @@ const Node = struct {
     }
 };
 
-pub fn getNode(allocator: Allocator, dir_handle: *Dir, name: []const u8) !Node {
+pub fn getNode(allocator: Allocator, io: Io, dir_handle: *Dir, name: []const u8) !Node {
     var total_size: u64 = 0;
     var iterator = dir_handle.iterate();
     var children_list = try ArrayList(Node).initCapacity(allocator, 16);
@@ -50,10 +50,10 @@ pub fn getNode(allocator: Allocator, dir_handle: *Dir, name: []const u8) !Node {
         children_list.deinit(allocator);
     }
 
-    while (try iterator.next()) |entry| {
+    while (try iterator.next(io)) |entry| {
         switch (entry.kind) {
             .file => {
-                const file_stat = dir_handle.statFile(entry.name) catch continue;
+                const file_stat = dir_handle.statFile(io, entry.name, .{}) catch continue;
                 const node = try Node.init(
                     allocator,
                     entry.name,
@@ -67,13 +67,15 @@ pub fn getNode(allocator: Allocator, dir_handle: *Dir, name: []const u8) !Node {
             },
             .directory => {
                 var subdir_handle = dir_handle.openDir(
+                    io,
                     entry.name,
                     .{ .iterate = true },
                 ) catch continue;
-                defer subdir_handle.close();
+                defer subdir_handle.close(io);
 
                 const node = try getNode(
                     allocator,
+                    io,
                     &subdir_handle,
                     entry.name,
                 );
@@ -147,7 +149,7 @@ test "getNode on empty directory — verify children is non-null, size is 0, and
     var tmp_dir = testing.tmpDir(.{ .access_sub_paths = true, .iterate = true });
     defer tmp_dir.cleanup();
 
-    const node = try getNode(testing.allocator, &tmp_dir.dir, "test_dir");
+    const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
     try testing.expectEqualStrings(node.name, "test_dir");
@@ -160,15 +162,15 @@ test "getNode on directory with files — verify size matches the sum and child 
     var tmp_dir = testing.tmpDir(.{ .access_sub_paths = true, .iterate = true });
     defer tmp_dir.cleanup();
 
-    var file1 = try tmp_dir.dir.createFile("file1", .{ .read = true });
-    _ = try file1.write("Zig is a general-purpose programming language and toolchain...");
-    file1.close();
+    var file1 = try tmp_dir.dir.createFile(testing.io, "file1", .{ .read = true });
+    _ = try file1.writeStreamingAll(testing.io, "Zig is a general-purpose programming language and toolchain...");
+    file1.close(testing.io);
 
-    var file2 = try tmp_dir.dir.createFile("file2", .{ .read = true });
-    _ = try file2.write("I am writing Zig code like all the cool kids!");
-    file2.close();
+    var file2 = try tmp_dir.dir.createFile(testing.io, "file2", .{ .read = true });
+    _ = try file2.writeStreamingAll(testing.io, "I am writing Zig code like all the cool kids!");
+    file2.close(testing.io);
 
-    const node = try getNode(testing.allocator, &tmp_dir.dir, "test_dir");
+    const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
     try testing.expectEqualStrings(node.name, "test_dir");
@@ -181,20 +183,20 @@ test "getNode with nested directories — verify recursive scanning produces cor
     var tmp_dir = testing.tmpDir(.{ .access_sub_paths = true, .iterate = true });
     defer tmp_dir.cleanup();
 
-    var file1 = try tmp_dir.dir.createFile("root_file", .{ .read = true });
-    _ = try file1.write("Zig is a general-purpose programming language and toolchain...");
-    file1.close();
+    var file1 = try tmp_dir.dir.createFile(testing.io, "root_file", .{ .read = true });
+    _ = try file1.writeStreamingAll(testing.io, "Zig is a general-purpose programming language and toolchain...");
+    file1.close(testing.io);
 
-    try tmp_dir.dir.makeDir("subdir");
+    try tmp_dir.dir.createDir(testing.io, "subdir", .default_dir);
 
-    var subdir = try tmp_dir.dir.openDir("subdir", .{});
-    defer subdir.close();
+    var subdir = try tmp_dir.dir.openDir(testing.io, "subdir", .{});
+    defer subdir.close(testing.io);
 
-    var file2 = try subdir.createFile("nested_file", .{ .read = true });
-    _ = try file2.write("...for maintaining robust, optimal, and reusable software.");
-    file2.close();
+    var file2 = try subdir.createFile(testing.io, "nested_file", .{ .read = true });
+    _ = try file2.writeStreamingAll(testing.io, "...for maintaining robust, optimal, and reusable software.");
+    file2.close(testing.io);
 
-    const node = try getNode(testing.allocator, &tmp_dir.dir, "root");
+    const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "root");
     defer node.deinit(testing.allocator);
 
     try testing.expectEqualStrings(node.name, "root");
@@ -222,14 +224,14 @@ test "getNode with inaccessible entries — verify skipped without error and oth
     var tmp_dir = testing.tmpDir(.{ .access_sub_paths = true, .iterate = true });
     defer tmp_dir.cleanup();
 
-    var file1 = try tmp_dir.dir.createFile("accessible_file", .{ .read = true });
-    _ = try file1.write("accessible content");
-    file1.close();
+    var file1 = try tmp_dir.dir.createFile(testing.io, "accessible_file", .{ .read = true });
+    _ = try file1.writeStreamingAll(testing.io, "accessible content");
+    file1.close(testing.io);
 
-    try tmp_dir.dir.makeDir("inaccessible_dir");
-    try posix.fchmodat(tmp_dir.dir.fd, "inaccessible_dir", 0, 0);
+    try tmp_dir.dir.createDir(testing.io, "inaccessible_dir", .default_dir);
+    try tmp_dir.dir.setFilePermissions(testing.io, "inaccessible_dir", .fromMode(0), .{});
 
-    const node = try getNode(testing.allocator, &tmp_dir.dir, "test_dir");
+    const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
     try testing.expectEqualStrings(node.name, "test_dir");
@@ -247,13 +249,13 @@ test "getNode skips symlinks and other non-file/non-directory entries" {
     var tmp_dir = testing.tmpDir(.{ .access_sub_paths = true, .iterate = true });
     defer tmp_dir.cleanup();
 
-    var file1 = try tmp_dir.dir.createFile("real_file", .{ .read = true });
-    _ = try file1.write("real content");
-    file1.close();
+    var file1 = try tmp_dir.dir.createFile(testing.io, "real_file", .{ .read = true });
+    _ = try file1.writeStreamingAll(testing.io, "real content");
+    file1.close(testing.io);
 
-    try tmp_dir.dir.symLink("real_file", "a_symlink", .{});
+    try tmp_dir.dir.symLink(testing.io, "real_file", "a_symlink", .{});
 
-    const node = try getNode(testing.allocator, &tmp_dir.dir, "test_dir");
+    const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
     try testing.expectEqualStrings(node.name, "test_dir");
@@ -271,19 +273,19 @@ test "getNode errdefer cleanup on allocation failure — use FailingAllocator, v
     var tmp_dir = testing.tmpDir(.{ .access_sub_paths = true, .iterate = true });
     defer tmp_dir.cleanup();
 
-    var file1 = try tmp_dir.dir.createFile("file1", .{ .read = true });
-    _ = try file1.write("Zig is a general-purpose programming language and toolchain...");
-    file1.close();
+    var file1 = try tmp_dir.dir.createFile(testing.io, "file1", .{ .read = true });
+    _ = try file1.writeStreamingAll(testing.io, "Zig is a general-purpose programming language and toolchain...");
+    file1.close(testing.io);
 
-    var file2 = try tmp_dir.dir.createFile("file2", .{ .read = true });
-    _ = try file2.write("...for maintaining robust, optimal, and reusable software.");
-    file2.close();
+    var file2 = try tmp_dir.dir.createFile(testing.io, "file2", .{ .read = true });
+    _ = try file2.writeStreamingAll(testing.io, "...for maintaining robust, optimal, and reusable software.");
+    file2.close(testing.io);
 
     var failing = testing.FailingAllocator.init(testing.allocator, .{ .fail_index = 2 });
 
     try testing.expectError(
         error.OutOfMemory,
-        getNode(failing.allocator(), &tmp_dir.dir, "test_dir"),
+        getNode(failing.allocator(), testing.io, &tmp_dir.dir, "test_dir"),
     );
 }
 

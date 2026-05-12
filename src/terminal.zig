@@ -1,6 +1,7 @@
 const std = @import("std");
 const atomic = std.atomic;
 const mem = std.mem;
+const os = std.os;
 const posix = std.posix;
 const testing = std.testing;
 const Sigaction = posix.Sigaction;
@@ -9,7 +10,7 @@ const Winsize = std.posix.winsize;
 
 var resize_event_flag = atomic.Value(bool).init(false);
 
-fn handleResizeEvent(_: i32) callconv(.c) void {
+fn handleResizeEvent(_: os.linux.SIG) callconv(.c) void {
     resize_event_flag.store(true, .release);
 }
 
