@@ -25,13 +25,11 @@ const Node = struct {
 
     pub fn deinit(self: Node, allocator: Allocator) void {
         if (self.children) |children| {
-            if (children.len != 0) {
-                for (children) |child| {
-                    child.deinit(allocator);
-                }
-
-                allocator.free(children);
+            for (children) |child| {
+                child.deinit(allocator);
             }
+
+            allocator.free(children);
         }
 
         allocator.free(self.basename);
@@ -91,13 +89,7 @@ pub fn getNode(allocator: Allocator, io: Io, dir_handle: *Dir, basename: []const
         }
     }
 
-    const children =
-        if (children_list.items.len > 0)
-            try children_list.toOwnedSlice(allocator)
-        else blk: {
-            children_list.deinit(allocator);
-            break :blk @as(?[]Node, &.{});
-        };
+    const children = try children_list.toOwnedSlice(allocator);
 
     return Node.init(
         allocator,
