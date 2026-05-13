@@ -56,7 +56,7 @@ pub fn main(init: Init) !void {
 
     const original_termios = try terminal.enableRawMode();
     defer terminal.disableRawMode(original_termios) catch |err| {
-        debug.print("{}", .{err});
+        fatal(stderr, "Failed to restore terminal mode: {}", .{err});
     };
 
     terminal.registerResizeEventHandler();
