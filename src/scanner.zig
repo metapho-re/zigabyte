@@ -7,7 +7,7 @@ const Dir = std.Io.Dir;
 const Io = std.Io;
 
 const Node = struct {
-    name: []const u8,
+    basename: []const u8,
     size: u64,
     children: ?[]Node = null,
 
@@ -15,9 +15,9 @@ const Node = struct {
         return self.children != null;
     }
 
-    pub fn init(allocator: Allocator, name: []const u8, size: u64, children: ?[]Node) !Node {
+    pub fn init(allocator: Allocator, basename: []const u8, size: u64, children: ?[]Node) !Node {
         return Node{
-            .name = try allocator.dupe(u8, name),
+            .basename = try allocator.dupe(u8, basename),
             .size = size,
             .children = children,
         };
@@ -34,11 +34,11 @@ const Node = struct {
             }
         }
 
-        allocator.free(self.name);
+        allocator.free(self.basename);
     }
 };
 
-pub fn getNode(allocator: Allocator, io: Io, dir_handle: *Dir, name: []const u8) !Node {
+pub fn getNode(allocator: Allocator, io: Io, dir_handle: *Dir, basename: []const u8) !Node {
     var total_size: u64 = 0;
     var iterator = dir_handle.iterate();
     var children_list = try ArrayList(Node).initCapacity(allocator, 16);
@@ -101,7 +101,7 @@ pub fn getNode(allocator: Allocator, io: Io, dir_handle: *Dir, name: []const u8)
 
     return Node.init(
         allocator,
-        name,
+        basename,
         total_size,
         children,
     );
@@ -114,12 +114,12 @@ test "Node.init / Node.deinit — create a node with init, verify fields, call d
     const dir_node = try Node.init(testing.allocator, "test_dir", 0, &.{});
     defer dir_node.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(dir_node.name, "test_dir");
+    try testing.expectEqualStrings(dir_node.basename, "test_dir");
     try testing.expectEqual(dir_node.size, 0);
     try testing.expectEqual(dir_node.isDir(), true);
     try testing.expectEqual(dir_node.children.?.len, 0);
 
-    try testing.expectEqualStrings(file_node.name, "test_file");
+    try testing.expectEqualStrings(file_node.basename, "test_file");
     try testing.expectEqual(file_node.size, 4096);
     try testing.expectEqual(file_node.isDir(), false);
     try testing.expectEqual(file_node.children, null);
@@ -152,7 +152,7 @@ test "getNode on empty directory — verify children is non-null, size is 0, and
     const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(node.name, "test_dir");
+    try testing.expectEqualStrings(node.basename, "test_dir");
     try testing.expectEqual(node.size, 0);
     try testing.expectEqual(node.isDir(), true);
     try testing.expectEqual(node.children.?.len, 0);
@@ -173,7 +173,7 @@ test "getNode on directory with files — verify size matches the sum and child 
     const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(node.name, "test_dir");
+    try testing.expectEqualStrings(node.basename, "test_dir");
     try testing.expectEqual(node.size, 107);
     try testing.expectEqual(node.isDir(), true);
     try testing.expectEqual(node.children.?.len, 2);
@@ -199,22 +199,22 @@ test "getNode with nested directories — verify recursive scanning produces cor
     const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "root");
     defer node.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(node.name, "root");
+    try testing.expectEqualStrings(node.basename, "root");
     try testing.expectEqual(node.size, 120);
     try testing.expectEqual(node.isDir(), true);
     try testing.expectEqual(node.children.?.len, 2);
 
-    try testing.expectEqualStrings(node.children.?[0].name, "subdir");
+    try testing.expectEqualStrings(node.children.?[0].basename, "subdir");
     try testing.expectEqual(node.children.?[0].size, 58);
     try testing.expectEqual(node.children.?[0].isDir(), true);
     try testing.expectEqual(node.children.?[0].children.?.len, 1);
 
-    try testing.expectEqualStrings(node.children.?[1].name, "root_file");
+    try testing.expectEqualStrings(node.children.?[1].basename, "root_file");
     try testing.expectEqual(node.children.?[1].size, 62);
     try testing.expectEqual(node.children.?[1].isDir(), false);
     try testing.expectEqual(node.children.?[1].children, null);
 
-    try testing.expectEqualStrings(node.children.?[0].children.?[0].name, "nested_file");
+    try testing.expectEqualStrings(node.children.?[0].children.?[0].basename, "nested_file");
     try testing.expectEqual(node.children.?[0].children.?[0].size, 58);
     try testing.expectEqual(node.children.?[0].children.?[0].isDir(), false);
     try testing.expectEqual(node.children.?[0].children.?[0].children, null);
@@ -234,12 +234,12 @@ test "getNode with inaccessible entries — verify skipped without error and oth
     const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(node.name, "test_dir");
+    try testing.expectEqualStrings(node.basename, "test_dir");
     try testing.expectEqual(node.size, 18);
     try testing.expectEqual(node.isDir(), true);
     try testing.expectEqual(node.children.?.len, 1);
 
-    try testing.expectEqualStrings(node.children.?[0].name, "accessible_file");
+    try testing.expectEqualStrings(node.children.?[0].basename, "accessible_file");
     try testing.expectEqual(node.children.?[0].size, 18);
     try testing.expectEqual(node.children.?[0].isDir(), false);
     try testing.expectEqual(node.children.?[0].children, null);
@@ -258,12 +258,12 @@ test "getNode skips symlinks and other non-file/non-directory entries" {
     const node = try getNode(testing.allocator, testing.io, &tmp_dir.dir, "test_dir");
     defer node.deinit(testing.allocator);
 
-    try testing.expectEqualStrings(node.name, "test_dir");
+    try testing.expectEqualStrings(node.basename, "test_dir");
     try testing.expectEqual(node.size, 12);
     try testing.expectEqual(node.isDir(), true);
     try testing.expectEqual(node.children.?.len, 1);
 
-    try testing.expectEqualStrings(node.children.?[0].name, "real_file");
+    try testing.expectEqualStrings(node.children.?[0].basename, "real_file");
     try testing.expectEqual(node.children.?[0].size, 12);
     try testing.expectEqual(node.children.?[0].isDir(), false);
     try testing.expectEqual(node.children.?[0].children, null);
@@ -289,7 +289,7 @@ test "getNode errdefer cleanup on allocation failure — use FailingAllocator, v
     );
 }
 
-test "Node.init name is independently allocated — mutating source buffer does not affect node name" {
+test "Node.init basename is independently allocated — mutating source buffer does not affect node basename" {
     var name_buf: [7]u8 = "Ziguana".*;
 
     const node = try Node.init(testing.allocator, &name_buf, 100, null);
@@ -297,5 +297,5 @@ test "Node.init name is independently allocated — mutating source buffer does 
 
     name_buf[0] = 'X';
 
-    try testing.expectEqualStrings(node.name, "Ziguana");
+    try testing.expectEqualStrings(node.basename, "Ziguana");
 }

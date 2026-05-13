@@ -1,5 +1,6 @@
 const std = @import("std");
 const debug = std.debug;
+const fs = std.fs;
 const posix = std.posix;
 const testing = std.testing;
 const Init = std.process.Init;
@@ -51,7 +52,12 @@ pub fn main(init: Init) !void {
     };
     defer dir_handle.close(init.io);
 
-    const root_node = try scanner.getNode(allocator, init.io, &dir_handle, dir_path);
+    var path_buffer: [fs.max_path_bytes]u8 = undefined;
+
+    const path_length = try dir_handle.realPath(init.io, &path_buffer);
+    const root_label = getRootLabelFromPath(path_buffer[0..path_length]);
+
+    const root_node = try scanner.getNode(allocator, init.io, &dir_handle, root_label);
     defer root_node.deinit(allocator);
 
     const original_termios = try terminal.enableRawMode();
@@ -89,6 +95,20 @@ fn fatal(stderr: *Writer, comptime fmt: []const u8, args: anytype) void {
     stderr.flush() catch {};
 }
 
+fn getRootLabelFromPath(absolute_path: []const u8) []const u8 {
+    const basename = fs.path.basename(absolute_path);
+
+    return if (basename.len == 0) "/" else basename;
+}
+
 test {
     testing.refAllDecls(@This());
+}
+
+test "getRootLabelFromPath returns / for root path" {
+    try testing.expectEqualStrings("/", getRootLabelFromPath("/"));
+}
+
+test "getRootLabelFromPath returns last segment of nested path" {
+    try testing.expectEqualStrings("zigabyte", getRootLabelFromPath("/home/user/dev/projects/zigabyte"));
 }
