@@ -25,7 +25,7 @@ pub fn main(init: Init) !void {
     const arg = args_iterator.next();
 
     if (args_iterator.next() != null) {
-        fatal(stderr, "Usage: zigabyte [directory]", .{});
+        fatal(stderr, "Usage: zigabyte [directory]\n", .{});
         return;
     }
 
@@ -33,19 +33,19 @@ pub fn main(init: Init) !void {
 
     var dir_handle = Io.Dir.cwd().openDir(init.io, dir_path, .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => {
-            fatal(stderr, "Directory not found: {s}", .{dir_path});
+            fatal(stderr, "Directory not found: {s}\n", .{dir_path});
             return;
         },
         error.AccessDenied => {
-            fatal(stderr, "Access denied: {s}", .{dir_path});
+            fatal(stderr, "Access denied: {s}\n", .{dir_path});
             return;
         },
         error.NotDir => {
-            fatal(stderr, "Not a directory: {s}", .{dir_path});
+            fatal(stderr, "Not a directory: {s}\n", .{dir_path});
             return;
         },
         else => {
-            fatal(stderr, "Failed to open {s}: {}", .{ dir_path, err });
+            fatal(stderr, "Failed to open {s}: {}\n", .{ dir_path, err });
             return;
         },
     };
@@ -56,7 +56,7 @@ pub fn main(init: Init) !void {
 
     const original_termios = try terminal.enableRawMode();
     defer terminal.disableRawMode(original_termios) catch |err| {
-        fatal(stderr, "Failed to restore terminal mode: {}", .{err});
+        fatal(stderr, "Failed to restore terminal mode: {}\n", .{err});
     };
 
     terminal.registerResizeEventHandler();
